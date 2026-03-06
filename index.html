@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Google Maps Парсер</title>
+</head>
+<body>
+    <h1>Google Maps Парсер</h1>
+
+    <div>
+        <label for="query">Поисковые запросы (каждый с новой строки или через запятую):</label><br>
+        <textarea id="query" rows="5" cols="50">Вывод из запоя в москве
+Наркологическая клиника москва
+Лечение алкоголизма москва</textarea>
+        <br>
+        <small>Пример: Вывод из запоя в москве, Наркологическая клиника, Лечение алкоголизма</small>
+    </div>
+
+    <button id="runButton" onclick="runParser()">Запустить парсер</button>
+    
+    <div id="status"></div>
+    
+    <h2>Активные сессии (<span id="activeCount">0</span>/5)</h2>
+    <div id="sessions"></div>
+
+    <script>
+        let currentSessionId = null;
+        const MAX_SESSIONS = 5;
+
+        function parseQueries(input) {
+            // Разделяем по запятым или переносам строк
+            let queries = input.split(/[,\n]/)
+                .map(q => q.trim())
+                .filter(q => q.length > 0);
+            
+            return queries;
+        }
+
+        async function checkActiveSessions() {
+            try {
+                const response = await fetch('/sessions');
+                const sessions = await response.json();
+                const activeCount = sessions.filter(s => s.status === 'running').length;
+                
+                document.getElementById('activeCount').textContent = activeCount;
+                
+                const runButton = document.getElementById('runButton');
+                if (activeCount >= MAX_SESSIONS) {
+                    runButton.disabled = true;
+                    runButton.textContent = 'Достигнут лимит сессий (5)';
+                } else {
+                    runButton.disabled = false;
+                    runButton.textContent = 'Запустить парсер';
+                }
+                
+                return activeCount;
+            } catch (error) {
+                console.error('Ошибка проверки сессий:', error);
+                return 0;
+            }
+        }
+
+        async function runParser() {
+            // Проверяем количество активных сессий перед запуском
+            const activeCount = await checkActiveSessions();
+            
+            if (activeCount >= MAX_SESSIONS) {
+                alert(`Достигнут лимит одновременных сессий (${MAX_SESSIONS}). Дождитесь завершения текущих.`);
+                return;
+            }
+
+            const queryInput = document.getElementById('query').value;
+            const queries = parseQueries(queryInput);
+            
+            if (queries.length === 0) {
+                alert('Введите хотя бы один запрос');
+                return;
+            }
+
+            const status = document.getElementById('status');
+            
+            // Объединяем все запросы в одну строку с разделителем
+            const combinedQuery = queries.join('|||');
+            
+            status.innerHTML = `Запуск парсера с ${queries.length} запросами...`;
+
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: combinedQuery })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentSessionId = result.sessionId;
+                    status.innerHTML = `✅ Парсер запущен! ID сессии: ${result.sessionId}<br>Запросы: ${queries.join(', ')}`;
+                    // Открываем новое окно с этим же приложением
+                    window.open('/', '_blank');
+                    // Обновляем список сессий
+                    loadSessions();
+                    // Обновляем счетчик активных сессий
+                    await checkActiveSessions();
+                } else {
+                    status.innerHTML = 'Ошибка: ' + result.message;
+                }
+                
+                console.log(result);
+            } catch (error) {
+                status.innerHTML = 'Ошибка: ' + error.message;
+            }
+        }
+
+        async function loadSessions() {
+            try {
+                const response = await fetch('/sessions');
+                const sessions = await response.json();
+                
+                let html = '<ul>';
+                sessions.forEach(session => {
+                    const statusClass = session.status === 'completed' ? '✅' : '🔄';
+                    // Показываем первый запрос или сокращенную версию
+                    const displayQuery = session.query.length > 30 
+                        ? session.query.substring(0, 30) + '...' 
+                        : session.query;
+                    
+                    html += `<li>
+                        ${statusClass} ID: ${session.id} | Запрос: ${displayQuery} | Статус: ${session.status}
+                        ${session.status === 'completed' ? `<button onclick="downloadSession('${session.id}')">Скачать CSV</button>` : ''}
+                    </li>`;
+                });
+                html += '</ul>';
+                
+                document.getElementById('sessions').innerHTML = html;
+                
+                // Обновляем счетчик активных сессий
+                await checkActiveSessions();
+            } catch (error) {
+                console.error('Ошибка загрузки сессий:', error);
+            }
+        }
+
+        function downloadSession(sessionId) {
+            window.location.href = `/download-csv/${sessionId}`;
+        }
+
+        // Обновляем список сессий каждые 5 секунд
+        setInterval(loadSessions, 5000);
+        
+        // Загружаем при старте
+        loadSessions();
+    </script>
+</body>
+</html>
