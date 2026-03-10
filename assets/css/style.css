@@ -486,3 +486,17 @@ button.parser__button-save:hover svg[viewBox="0 0 16 16"] path:last-child {
     color: #16c60c;
     background-color: white;
 }
+
+  .header {
+    background-color: #454545;
+    padding: 22px;
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+}
+
+.header p {
+    color: #f0f0f0;
+    font-size: 21px;
+}
